@@ -1,0 +1,732 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { 
+  Leaf, LogOut, Package, Star, MessageSquare, Phone, Mail, Users, 
+  FileText, Award, Plus, Trash2, Edit, X, Save, Loader2, Menu,
+  ShoppingCart, Clock, CheckCircle, Truck
+} from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
+
+type TabType = 'orders' | 'products' | 'reviews' | 'blogs' | 'floating' | 'contacts' | 'callbacks' | 'enquiries' | 'farmers' | 'subscribers' | 'plans' | 'newsletter' | 'participants';
+
+const AdminPage: React.FC = () => {
+  const { isAdmin, logout, adminEmail, token } = useAuth();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<TabType>('orders');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [data, setData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [formData, setFormData] = useState<any>({});
+  const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [orderItems, setOrderItems] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      navigate('/admin-login');
+    }
+  }, [isAdmin, navigate]);
+
+  useEffect(() => {
+    fetchData();
+  }, [activeTab]);
+
+  const getTableName = () => {
+    const tables: Record<TabType, string> = {
+      orders: 'orders',
+      products: 'products',
+      reviews: 'reviews',
+      blogs: 'blogs',
+      floating: 'floating_texts',
+      contacts: 'contact_forms',
+      callbacks: 'callback_requests',
+      enquiries: 'enquiries',
+      farmers: 'lucky_farmers',
+      subscribers: 'lucky_subscribers',
+      plans: 'plans',
+      newsletter: 'subscribers',
+      participants: 'participants',
+    };
+    return tables[activeTab];
+  };
+
+  const fetchData = async () => {
+    setLoading(true);
+    const backendTabs: TabType[] = ['plans', 'newsletter', 'participants', 'products', 'reviews', 'blogs', 'farmers', 'subscribers'];
+    if (backendTabs.includes(activeTab)) {
+      const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5000';
+      const endpoint =
+        activeTab === 'farmers' ? 'lucky-farmers'
+        : activeTab === 'subscribers' ? 'lucky-subscribers'
+        : getTableName();
+      const res = await fetch(`${API_URL}/api/${endpoint}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const json = await res.json();
+      const mapped = Array.isArray(json)
+        ? json.map((it: any) => ({ id: it._id || it.id, ...it }))
+        : [];
+      setData(mapped);
+    } else {
+      const { data: result } = await supabase
+        .from(getTableName())
+        .select('*')
+        .order('created_at', { ascending: false });
+      setData(result || []);
+    }
+    setLoading(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this item?')) return;
+    const backendTabs: TabType[] = ['plans', 'newsletter', 'participants', 'products', 'reviews', 'blogs', 'farmers', 'subscribers'];
+    if (backendTabs.includes(activeTab)) {
+      const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5000';
+      const endpoint =
+        activeTab === 'farmers' ? 'lucky-farmers'
+        : activeTab === 'subscribers' ? 'lucky-subscribers'
+        : getTableName();
+      await fetch(`${API_URL}/api/${endpoint}/${id}` , {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+    } else {
+      await supabase.from(getTableName()).delete().eq('id', id);
+    }
+    fetchData();
+  };
+
+  const handleSave = async () => {
+    const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5000';
+    if (editItem) {
+      if (activeTab === 'plans') {
+        // For simplicity, create only; editing can be added later
+      } else {
+        // Keep Supabase editing for now (not migrating edit flows)
+        await supabase.from(getTableName()).update(formData).eq('id', editItem.id);
+      }
+    } else {
+      if (activeTab === 'plans') {
+        const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5000';
+        const fd = new FormData();
+        fd.append('title', formData.title || '');
+        fd.append('price', String(formData.price || ''));
+        fd.append('billingPeriod', formData.billingPeriod || 'monthly');
+        fd.append('description', formData.description || '');
+        if (Array.isArray(formData.features)) {
+          fd.append('features', JSON.stringify(formData.features));
+        } else if (typeof formData.features === 'string') {
+          fd.append('features', formData.features);
+        }
+        fd.append('popular', String(!!formData.popular));
+        if (formData.order != null) fd.append('order', String(formData.order));
+        if (formData.imageUrl) fd.append('imageUrl', formData.imageUrl);
+        if (formData.imageFile) fd.append('image', formData.imageFile);
+        await fetch(`${API_URL}/api/plans`, {
+          method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          body: fd,
+        });
+      } else {
+        const backendTabs: TabType[] = ['products', 'reviews', 'blogs', 'farmers', 'subscribers'];
+        if (backendTabs.includes(activeTab)) {
+          const fd = new FormData();
+          let endpoint = getTableName();
+          if (activeTab === 'farmers') endpoint = 'lucky-farmers';
+          if (activeTab === 'subscribers') endpoint = 'lucky-subscribers';
+
+          if (activeTab === 'products') {
+            fd.append('name', formData.name || '');
+            if (formData.description) fd.append('description', formData.description);
+            if (formData.price != null) fd.append('price', String(formData.price));
+            if (formData.image_url) fd.append('imageUrl', formData.image_url);
+            if (formData.imageFile) fd.append('image', formData.imageFile);
+          } else if (activeTab === 'reviews') {
+            fd.append('name', formData.name || '');
+            if (formData.review_text) fd.append('text', formData.review_text);
+            if (formData.image_url) fd.append('imageUrl', formData.image_url);
+            if (formData.imageFile) fd.append('image', formData.imageFile);
+          } else if (activeTab === 'blogs') {
+            fd.append('title', formData.title || '');
+            if (formData.content) fd.append('content', formData.content);
+            if (formData.image_url) fd.append('mediaUrl', formData.image_url);
+            if (formData.imageFile) fd.append('media', formData.imageFile);
+          } else if (activeTab === 'farmers' || activeTab === 'subscribers') {
+            fd.append('name', formData.name || '');
+            if (formData.content) fd.append('content', formData.content);
+            if (formData.phone) fd.append('phone', formData.phone);
+            if (formData.image_url) fd.append('imageUrl', formData.image_url);
+            if (formData.imageFile) fd.append('image', formData.imageFile);
+          }
+
+          await fetch(`${API_URL}/api/${endpoint}`, {
+            method: 'POST',
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            body: fd,
+          });
+        } else {
+          await supabase.from(getTableName()).insert([formData]);
+        }
+      }
+    }
+    setShowForm(false);
+    setEditItem(null);
+    setFormData({});
+    fetchData();
+  };
+
+  const openForm = (item?: any) => {
+    if (item) {
+      setEditItem(item);
+      setFormData(item);
+    } else {
+      setEditItem(null);
+      setFormData({});
+    }
+    setShowForm(true);
+  };
+
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    await supabase
+      .from('orders')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', orderId);
+    fetchData();
+    if (selectedOrder?.id === orderId) {
+      setSelectedOrder({ ...selectedOrder, status: newStatus });
+    }
+  };
+
+  const viewOrderDetails = async (order: any) => {
+    setSelectedOrder(order);
+    const { data: items } = await supabase
+      .from('order_items')
+      .select('*')
+      .eq('order_id', order.id);
+    setOrderItems(items || []);
+  };
+
+  const tabs = [
+    { id: 'orders', label: 'Orders', icon: ShoppingCart },
+    { id: 'products', label: 'Products', icon: Package },
+    { id: 'reviews', label: 'Reviews', icon: Star },
+    { id: 'blogs', label: 'Blogs', icon: FileText },
+    { id: 'floating', label: 'Floating Text', icon: MessageSquare },
+    { id: 'contacts', label: 'Contact Forms', icon: Mail },
+    { id: 'callbacks', label: 'Callbacks', icon: Phone },
+    { id: 'enquiries', label: 'Enquiries', icon: MessageSquare },
+    { id: 'farmers', label: 'Lucky Farmers', icon: Users },
+    { id: 'subscribers', label: 'Lucky Subscribers', icon: Award },
+    { id: 'plans', label: 'Plans', icon: Award },
+    { id: 'newsletter', label: 'Newsletter', icon: Mail },
+    { id: 'participants', label: 'Participants', icon: Users },
+  ];
+
+  const orderStatuses = [
+    { value: 'pending', label: 'Pending', color: 'yellow', icon: Clock },
+    { value: 'confirmed', label: 'Confirmed', color: 'blue', icon: CheckCircle },
+    { value: 'out_for_delivery', label: 'Out for Delivery', color: 'purple', icon: Truck },
+    { value: 'delivered', label: 'Delivered', color: 'green', icon: CheckCircle },
+    { value: 'rejected', label: 'Rejected', color: 'red', icon: X },
+    { value: 'out_of_stock', label: 'Out of Stock', color: 'orange', icon: Package },
+  ];
+
+  const getStatusBadge = (status: string) => {
+    const statusConfig = orderStatuses.find(s => s.value === status) || orderStatuses[0];
+    const colorClasses: Record<string, string> = {
+      yellow: 'bg-yellow-100 text-yellow-800',
+      blue: 'bg-blue-100 text-blue-800',
+      purple: 'bg-purple-100 text-purple-800',
+      green: 'bg-green-100 text-green-800',
+      red: 'bg-red-100 text-red-800',
+      orange: 'bg-orange-100 text-orange-800',
+    };
+    return (
+      <span className={`px-3 py-1 rounded-full text-xs font-medium ${colorClasses[statusConfig.color]}`}>
+        {statusConfig.label}
+      </span>
+    );
+  };
+
+  const renderOrdersTable = () => {
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-green-600" />
+        </div>
+      );
+    }
+
+    if (data.length === 0) {
+      return (
+        <div className="text-center py-20 text-gray-500">
+          No orders found.
+        </div>
+      );
+    }
+
+    return (
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order #</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {data.map((order) => (
+              <tr key={order.id} className="hover:bg-gray-50">
+                <td className="px-4 py-4 text-sm font-medium text-green-600">{order.order_number}</td>
+                <td className="px-4 py-4 text-sm">
+                  <p className="font-medium text-gray-900">{order.customer_name}</p>
+                  <p className="text-gray-500">{order.customer_phone}</p>
+                </td>
+                <td className="px-4 py-4 text-sm font-semibold">₹{Number(order.total).toFixed(2)}</td>
+                <td className="px-4 py-4">{getStatusBadge(order.status)}</td>
+                <td className="px-4 py-4 text-sm text-gray-500">
+                  {new Date(order.created_at).toLocaleDateString('en-IN')}
+                </td>
+                <td className="px-4 py-4 text-right space-x-2">
+                  <button
+                    onClick={() => viewOrderDetails(order)}
+                    className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
+                  >
+                    View
+                  </button>
+                  <button
+                    onClick={() => handleDelete(order.id)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {/* Optional image upload for Supabase tabs */}
+            {['products','reviews','blogs','farmers','subscribers'].includes(activeTab) && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Image (optional)</label>
+                <input type="file" accept="image/*" onChange={(e) => setFormData({ ...formData, imageFile: e.target.files?.[0] })} />
+                <p className="text-xs text-gray-500 mt-1">You can either paste an Image URL field or upload a file. If both are provided, the uploaded file will be used.</p>
+              </div>
+            )}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const renderOrderModal = () => {
+    if (!selectedOrder) return null;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/50" onClick={() => setSelectedOrder(null)}></div>
+        <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">Order Details</h3>
+              <p className="text-sm text-green-600">{selectedOrder.order_number}</p>
+            </div>
+            <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-gray-100 rounded-lg">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          
+          <div className="p-6 space-y-6">
+            {/* Status Update */}
+            <div>
+              <h4 className="font-medium text-gray-900 mb-3">Update Status</h4>
+              <div className="flex flex-wrap gap-2">
+                {orderStatuses.map((status) => (
+                  <button
+                    key={status.value}
+                    onClick={() => updateOrderStatus(selectedOrder.id, status.value)}
+                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg border-2 transition-colors ${
+                      selectedOrder.status === status.value
+                        ? 'border-green-500 bg-green-50 text-green-700'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <status.icon className="h-4 w-4" />
+                    <span>{status.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Customer Info */}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="bg-gray-50 rounded-xl p-4">
+                <h4 className="font-medium text-gray-900 mb-2">Customer</h4>
+                <p className="text-gray-700">{selectedOrder.customer_name}</p>
+                <p className="text-gray-500">{selectedOrder.customer_phone}</p>
+                {selectedOrder.customer_email && (
+                  <p className="text-gray-500">{selectedOrder.customer_email}</p>
+                )}
+              </div>
+              <div className="bg-gray-50 rounded-xl p-4">
+                <h4 className="font-medium text-gray-900 mb-2">Delivery Address</h4>
+                <p className="text-gray-700">{selectedOrder.delivery_address}</p>
+                <p className="text-gray-500">
+                  {selectedOrder.delivery_city} - {selectedOrder.delivery_pincode}
+                </p>
+                {selectedOrder.delivery_landmark && (
+                  <p className="text-gray-500">Landmark: {selectedOrder.delivery_landmark}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Order Items */}
+            <div>
+              <h4 className="font-medium text-gray-900 mb-3">Order Items</h4>
+              <div className="bg-gray-50 rounded-xl divide-y">
+                {orderItems.map((item) => (
+                  <div key={item.id} className="p-4 flex justify-between">
+                    <div>
+                      <p className="font-medium text-gray-900">{item.product_name}</p>
+                      <p className="text-sm text-gray-500">
+                        ₹{Number(item.product_price).toFixed(2)} x {item.quantity} kg
+                      </p>
+                    </div>
+                    <p className="font-semibold">₹{Number(item.total).toFixed(2)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Order Summary */}
+            <div className="bg-green-50 rounded-xl p-4">
+              <div className="space-y-2">
+                <div className="flex justify-between text-gray-600">
+                  <span>Subtotal</span>
+                  <span>₹{Number(selectedOrder.subtotal).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-gray-600">
+                  <span>Delivery Fee</span>
+                  <span>{Number(selectedOrder.delivery_fee) === 0 ? 'FREE' : `₹${selectedOrder.delivery_fee}`}</span>
+                </div>
+                <div className="flex justify-between text-lg font-bold text-gray-900 pt-2 border-t border-green-200">
+                  <span>Total</span>
+                  <span>₹{Number(selectedOrder.total).toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Notes */}
+            {selectedOrder.notes && (
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">Order Notes</h4>
+                <p className="text-gray-600 bg-gray-50 rounded-xl p-4">{selectedOrder.notes}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderForm = () => {
+    const fields: Record<TabType, { name: string; type: string; required?: boolean }[]> = {
+      orders: [],
+      products: [
+        { name: 'name', type: 'text', required: true },
+        { name: 'price', type: 'number', required: true },
+        { name: 'description', type: 'textarea' },
+        { name: 'image_url', type: 'text' },
+        { name: 'category', type: 'text' },
+      ],
+      reviews: [
+        { name: 'name', type: 'text', required: true },
+        { name: 'designation', type: 'text' },
+        { name: 'image_url', type: 'text' },
+        { name: 'review_text', type: 'textarea', required: true },
+      ],
+      blogs: [
+        { name: 'title', type: 'text', required: true },
+        { name: 'content', type: 'textarea', required: true },
+        { name: 'image_url', type: 'text' },
+        { name: 'video_url', type: 'text' },
+      ],
+      floating: [
+        { name: 'text', type: 'textarea', required: true },
+      ],
+      contacts: [],
+      callbacks: [],
+      enquiries: [],
+      farmers: [
+        { name: 'name', type: 'text', required: true },
+        { name: 'image_url', type: 'text' },
+        { name: 'content', type: 'textarea' },
+        { name: 'phone', type: 'text' },
+      ],
+      subscribers: [
+        { name: 'name', type: 'text', required: true },
+        { name: 'image_url', type: 'text' },
+        { name: 'content', type: 'textarea' },
+        { name: 'phone', type: 'text' },
+      ],
+      plans: [
+        { name: 'title', type: 'text', required: true },
+        { name: 'price', type: 'number', required: true },
+        { name: 'billingPeriod', type: 'text', required: true },
+        { name: 'features', type: 'textarea' },
+        { name: 'description', type: 'textarea' },
+        { name: 'imageUrl', type: 'text' },
+        { name: 'order', type: 'number' },
+      ],
+      newsletter: [],
+      participants: [],
+    };
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/50" onClick={() => setShowForm(false)}></div>
+        <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+            <h3 className="text-lg font-semibold">{editItem ? 'Edit' : 'Add'} {activeTab}</h3>
+            <button onClick={() => setShowForm(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="p-6 space-y-4">
+            {fields[activeTab].map((field) => (
+              <div key={field.name}>
+                <label className="block text-sm font-medium text-gray-700 mb-1 capitalize">
+                  {field.name.replace('_', ' ')} {field.required && '*'}
+                </label>
+                {field.type === 'textarea' ? (
+                  <textarea
+                    value={formData[field.name] || ''}
+                    onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
+                    rows={4}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
+                  />
+                ) : (
+                  <input
+                    type={field.type}
+                    value={formData[field.name] || ''}
+                    onChange={(e) => setFormData({ ...formData, [field.name]: field.type === 'number' ? parseFloat(e.target.value) : e.target.value })}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
+                  />
+                )}
+              </div>
+            ))}
+            {['products','reviews','blogs','farmers','subscribers'].includes(activeTab) && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Image (optional)</label>
+                <input type="file" accept="image/*" onChange={(e) => setFormData({ ...formData, imageFile: e.target.files?.[0] })} />
+                <p className="text-xs text-gray-500 mt-1">You can paste an Image URL or upload a file. If both are provided, the uploaded file will be used.</p>
+              </div>
+            )}
+            {activeTab === 'plans' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Image</label>
+                <input type="file" accept="image/*" onChange={(e) => setFormData({ ...formData, imageFile: e.target.files?.[0] })} />
+                <div className="mt-3 flex items-center space-x-2">
+                  <label className="text-sm text-gray-700">Popular</label>
+                  <input type="checkbox" checked={!!formData.popular} onChange={(e) => setFormData({ ...formData, popular: e.target.checked })} />
+                </div>
+                <p className="text-xs text-gray-500 mt-2">Features: enter as JSON array or comma-separated lines.</p>
+              </div>
+            )}
+            <button
+              onClick={handleSave}
+              className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 flex items-center justify-center space-x-2"
+            >
+              <Save className="h-5 w-5" />
+              <span>Save</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderTable = () => {
+    if (activeTab === 'orders') {
+      return renderOrdersTable();
+    }
+
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-green-600" />
+        </div>
+      );
+    }
+
+    if (data.length === 0) {
+      return (
+        <div className="text-center py-20 text-gray-500">
+          No data found.
+        </div>
+      );
+    }
+
+    let columns = Object.keys(data[0]).filter(k => k !== 'id' && k !== 'created_at' && k !== 'password_hash' && k !== 'updated_at');
+    // Ensure participants show key fields including phone
+    if (activeTab === 'participants') {
+      const desired = ['name', 'role', 'email', 'phone', 'message'];
+      // keep only desired if present, in that order
+      columns = desired.filter((c) => columns.includes(c));
+    }
+
+    return (
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-gray-50">
+            <tr>
+              {(activeTab === 'participants' ? columns : columns.slice(0, 4)).map((col) => (
+                <th key={col} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {col.replace(/_/g, ' ')}
+                </th>
+              ))}
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {data.map((item) => (
+              <tr key={item.id} className="hover:bg-gray-50">
+                {(activeTab === 'participants' ? columns : columns.slice(0, 4)).map((col) => (
+                  <td key={col} className="px-4 py-4 text-sm text-gray-900 max-w-xs truncate">
+                    {col.includes('image') || col.includes('url') ? (
+                      item[col] ? (
+                        <img src={item[col]} alt="" className="h-10 w-10 rounded object-cover" />
+                      ) : '-'
+                    ) : (
+                      String(item[col] || '-').substring(0, 50)
+                    )}
+                  </td>
+                ))}
+                <td className="px-4 py-4 text-right space-x-2">
+                  {!['contacts', 'callbacks', 'enquiries', 'orders'].includes(activeTab) && (
+                    <button
+                      onClick={() => openForm(item)}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleDelete(item.id)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  if (!isAdmin) return null;
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex">
+      {/* Sidebar */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-green-800 transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 transition-transform`}>
+        <div className="p-6">
+          <div className="flex items-center space-x-3 text-white mb-8">
+            <Leaf className="h-8 w-8" />
+            <div>
+              <h1 className="font-bold">Annadata</h1>
+              <p className="text-xs text-green-200">Admin Panel</p>
+            </div>
+          </div>
+          <nav className="space-y-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id as TabType);
+                  setSidebarOpen(false);
+                }}
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                  activeTab === tab.id
+                    ? 'bg-green-700 text-white'
+                    : 'text-green-100 hover:bg-green-700/50'
+                }`}
+              >
+                <tab.icon className="h-5 w-5" />
+                <span className="text-sm">{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+        <div className="absolute bottom-0 left-0 right-0 p-6">
+          <button
+            onClick={() => { logout(); navigate('/'); }}
+            className="w-full flex items-center justify-center space-x-2 bg-red-500 text-white py-3 rounded-lg hover:bg-red-600"
+          >
+            <LogOut className="h-5 w-5" />
+            <span>Logout</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 lg:ml-64">
+        <header className="bg-white shadow-sm sticky top-0 z-40">
+          <div className="flex items-center justify-between px-6 py-4">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="lg:hidden p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <Menu className="h-6 w-6" />
+              </button>
+              <h2 className="text-xl font-semibold text-gray-800 capitalize">{activeTab.replace(/_/g, ' ')}</h2>
+            </div>
+            <div className="flex items-center space-x-4">
+              <span className="text-sm text-gray-500">{adminEmail}</span>
+              {!['contacts', 'callbacks', 'enquiries', 'orders', 'newsletter', 'participants'].includes(activeTab) && (
+                <button
+                  onClick={() => openForm()}
+                  className="flex items-center space-x-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
+                >
+                  <Plus className="h-5 w-5" />
+                  <span>Add New</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </header>
+
+        <div className="p-6">
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            {renderTable()}
+          </div>
+        </div>
+      </main>
+
+      {/* Overlay for mobile */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        ></div>
+      )}
+
+      {/* Form Modal */}
+      {showForm && renderForm()}
+
+      {/* Order Details Modal */}
+      {renderOrderModal()}
+    </div>
+  );
+};
+
+export default AdminPage;
