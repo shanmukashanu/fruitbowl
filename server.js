@@ -1,4 +1,6 @@
 import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import morgan from 'morgan';
@@ -12,6 +14,8 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const defaultOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:8080', 'http://127.0.0.1:8080'];
 const envOrigins = (process.env.CLIENT_URLS || process.env.CLIENT_URL || '')
@@ -485,6 +489,13 @@ app.delete('/api/plans/:id', authenticateAdmin, async (req, res) => {
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'Server error' });
+});
+
+// Serve frontend static files (Vite build) and SPA fallback (for single-service hosting)
+const distDir = path.join(__dirname, 'dist');
+app.use(express.static(distDir));
+app.get(/^(?!\/api\/).*/, (req, res) => {
+  res.sendFile(path.join(distDir, 'index.html'));
 });
 
 app.listen(PORT, () => {
